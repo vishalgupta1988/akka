@@ -60,7 +60,7 @@ class CrdtSpec extends MultiNodeSpec(CrdtSpec) with STMultiNodeSpec with Implici
         within(5.seconds) {
           awaitAssert {
             replicator ! Internal.GetNodeCount
-            expectMsg(1)
+            expectMsg(Internal.NodeCount(1))
           }
         }
 
@@ -106,7 +106,7 @@ class CrdtSpec extends MultiNodeSpec(CrdtSpec) with STMultiNodeSpec with Implici
       within(10.seconds) {
         awaitAssert {
           replicator ! Internal.GetNodeCount
-          expectMsg(2)
+          expectMsg(Internal.NodeCount(2))
         }
       }
     }
@@ -263,7 +263,7 @@ class CrdtSpec extends MultiNodeSpec(CrdtSpec) with STMultiNodeSpec with Implici
       within(10.seconds) {
         awaitAssert {
           replicator ! Internal.GetNodeCount
-          expectMsg(3)
+          expectMsg(Internal.NodeCount(3))
         }
       }
     }

@@ -44,6 +44,8 @@ import akka.cluster.VectorClock
  *     including the local replica</li>
  * <li>`WriteThree` the value will immediately be written to at least three replicas,
  *     including the local replica</li>
+ * <li>`W(n)` the value will immediately be written to at least `n` replicas,
+ *     including the local replica</li>
  * <li>`WriteQuorum` the value will immediately be written to a majority of replicas, i.e.
  *     at least `N/2 + 1` replicas, where N is the number of nodes in the cluster
  *     (or cluster role group)</li>
@@ -66,6 +68,8 @@ import akka.cluster.VectorClock
  * <li>`ReadTwo` the value will be read and merged from two replicas,
  *     including the local replica</li>
  * <li>`ReadThree` the value will be read and merged from three replicas,
+ *     including the local replica</li>
+ * <li>`R(n)` the value will be read and merged from `n` replicas,
  *     including the local replica</li>
  * <li>`ReadQuorum` the value will read and merged from a majority of replicas, i.e.
  *     at least `N/2 + 1` replicas, where N is the number of nodes in the cluster
@@ -90,16 +94,18 @@ object Replicator {
   // FIXME Java API props
 
   sealed trait ReadConsistency
-  case object ReadOne extends ReadConsistency
-  case object ReadTwo extends ReadConsistency
-  case object ReadThree extends ReadConsistency
+  object ReadOne extends R(1)
+  object ReadTwo extends R(2)
+  object ReadThree extends R(3)
+  case class R(n: Int) extends ReadConsistency
   case object ReadQuorum extends ReadConsistency
   case object ReadAll extends ReadConsistency
 
   sealed trait WriteConsistency
-  case object WriteOne extends WriteConsistency
-  case object WriteTwo extends WriteConsistency
-  case object WriteThree extends WriteConsistency
+  object WriteOne extends W(1)
+  object WriteTwo extends W(2)
+  object WriteThree extends W(3)
+  case class W(n: Int) extends WriteConsistency
   case object WriteQuorum extends WriteConsistency
   case object WriteAll extends WriteConsistency
 
@@ -130,13 +136,14 @@ object Replicator {
     // but we use the partial casual ordering of the updates to determine 
     // what delta to send in the Gossip exchange
     case class VersionedCrdt(crdt: ConvergentReplicatedDataType, version: VectorClock) {
-      def merge(other: VersionedCrdt): VersionedCrdt = copy(crdt merge other.crdt, version merge other.version)
+      def merge(other: VersionedCrdt): VersionedCrdt = copy(crdt merge other.crdt.asInstanceOf[crdt.T], version merge other.version)
     }
     case class Status(versions: Map[String, VectorClock])
     case class Gossip(crdts: Map[String, VersionedCrdt])
 
     // Testing purpose
     case object GetNodeCount
+    case class NodeCount(n: Int)
 
   }
 
@@ -265,14 +272,14 @@ class Replicator(
 
     case GetNodeCount ⇒
       // selfAddress is not included in the set
-      sender() ! (nodes.size + 1)
+      sender() ! NodeCount(nodes.size + 1)
   }
 
   def change(key: String, crdt: ConvergentReplicatedDataType): VersionedCrdt =
     crdts.get(key) match {
       case Some(vCrdt @ VersionedCrdt(existing, v)) ⇒
         if (existing.getClass == crdt.getClass) {
-          val merged = VersionedCrdt(crdt merge existing, v :+ vclockNode)
+          val merged = VersionedCrdt(crdt merge existing.asInstanceOf[crdt.T], v :+ vclockNode)
           crdts = crdts.updated(key, merged)
           merged
         } else {
@@ -369,10 +376,8 @@ private[akka] class WriteAggregator(
   import Replicator.Internal._
 
   val doneWhenRemainingSize = consistency match {
-    case WriteOne   ⇒ nodes.size
-    case WriteTwo   ⇒ nodes.size - 1
-    case WriteThree ⇒ nodes.size - 2
-    case WriteAll   ⇒ 0
+    case W(n)     ⇒ nodes.size - (n - 1)
+    case WriteAll ⇒ 0
     case WriteQuorum ⇒
       val N = nodes.size + 1
       if (N < 3) -1
@@ -426,10 +431,8 @@ private[akka] class ReadAggregator(
 
   var result = localValue
   val doneWhenRemainingSize = consistency match {
-    case ReadOne   ⇒ nodes.size
-    case ReadTwo   ⇒ nodes.size - 1
-    case ReadThree ⇒ nodes.size - 2
-    case ReadAll   ⇒ 0
+    case R(n)    ⇒ nodes.size - (n - 1)
+    case ReadAll ⇒ 0
     case ReadQuorum ⇒
       val N = nodes.size + 1
       if (N < 3) -1
