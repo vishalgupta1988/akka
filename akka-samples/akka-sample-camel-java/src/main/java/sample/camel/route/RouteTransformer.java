@@ -16,6 +16,7 @@ public class RouteTransformer extends UntypedActor {
     if (message instanceof CamelMessage) {
       // example: transform message body "foo" to "- foo -" and forward result
       // to producer
+      //I want to check if I can do this
       CamelMessage camelMessage = (CamelMessage) message;
       CamelMessage transformedMessage = camelMessage.mapBody(new Mapper<String, String>() {
         @Override
